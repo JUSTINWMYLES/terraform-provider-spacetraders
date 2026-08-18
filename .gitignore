@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# eidos-generated provider files (regenerated in CI from generator.yaml)
+# Generated provider code (regenerated in CI from generator.yaml)
+.eidos-generated.json
+README.md
+docs/
+examples/
+go.mod
+go.sum
+internal/
+main.go
+
+# macOS
+.DS_Store
