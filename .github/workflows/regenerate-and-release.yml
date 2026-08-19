@@ -44,7 +44,7 @@ jobs:
       - name: Regenerate provider from spec
         # --skip-build keeps the committed build scaffolding; only the provider
         # code is regenerated into the working tree.
-        run: eidos generate --spec https://api.spacetraders.io/v2/documentation/json --skip-build --output .
+        run: eidos generate --config generator.yaml --skip-build --output . --force
 
       - name: Build and test
         run: |
