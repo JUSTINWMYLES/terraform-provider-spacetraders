@@ -375,10 +375,6 @@ global_timeouts:
     delete: 10m
 generate_terraform_tests: false
 sign_release: true
-generation:
-    dynamic_release:
-        enabled: true
-        spec_path: https://api.spacetraders.io/v2/documentation/json
 spec:
     path: https://api.spacetraders.io/v2/documentation/json
     format: openapi3
