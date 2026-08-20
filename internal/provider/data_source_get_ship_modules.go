@@ -1,0 +1,129 @@
+package provider
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+)
+import (
+	datasource "github.com/hashicorp/terraform-plugin-framework/datasource"
+	schema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	types "github.com/hashicorp/terraform-plugin-framework/types"
+	client "github.com/spacetraders/terraform-provider-spacetraders/internal/client"
+)
+
+// Compile-time interface assertion.
+var (
+	_ datasource.DataSource              = (*GetShipModulesDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*GetShipModulesDataSource)(nil)
+)
+
+// GetShipModulesDataSource is the generated Terraform data source implementation.
+type GetShipModulesDataSource struct {
+	client *client.Client
+}
+
+// GetShipModulesDataSourceModel describes the data source state shape.
+type GetShipModulesDataSourceModel struct {
+	Items      types.List   `tfsdk:"items"`
+	ShipSymbol types.String `tfsdk:"ship_symbol" json:"shipSymbol"`
+}
+
+// NewGetShipModulesDataSource returns a new instance of the generated data source.
+func NewGetShipModulesDataSource() datasource.DataSource {
+	return &GetShipModulesDataSource{}
+}
+
+// Metadata returns the data source type name.
+func (d *GetShipModulesDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = "spacetraders_get_ship_modules"
+}
+
+// Schema returns the data source schema.
+func (d *GetShipModulesDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{MarkdownDescription: "Get the modules installed on a ship.", Attributes: map[string]schema.Attribute{"items": schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{"capacity": schema.Int64Attribute{MarkdownDescription: "Modules that provide capacity, such as cargo hold or crew quarters will show this value to denote how much of a bonus the module grants.", Computed: true}, "description": schema.StringAttribute{MarkdownDescription: "Description of this module.", Computed: true}, "name": schema.StringAttribute{MarkdownDescription: "Name of this module.", Computed: true}, "range": schema.Int64Attribute{MarkdownDescription: "Modules that have a range will such as a sensor array show this value to denote how far can the module reach with its capabilities.", Computed: true}, "requirements": schema.SingleNestedAttribute{MarkdownDescription: "The requirements for installation on a ship", Computed: true, Attributes: map[string]schema.Attribute{"crew": schema.Int64Attribute{MarkdownDescription: "The number of crew required for operation.", Computed: true}, "power": schema.Int64Attribute{MarkdownDescription: "The amount of power required from the reactor.", Computed: true}, "slots": schema.Int64Attribute{MarkdownDescription: "The number of module slots required for installation.", Computed: true}}}, "symbol": schema.StringAttribute{MarkdownDescription: "The symbol of the module.", Computed: true}}}}, "ship_symbol": schema.StringAttribute{MarkdownDescription: "The symbol of the ship.", Required: true}}}
+}
+
+// Read fetches remote state into the data source model.
+func (d *GetShipModulesDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var config GetShipModulesDataSourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	d.readListRemote(ctx, &config, resp)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
+}
+
+// readListRemote performs the paginated read HTTP exchange and decodes the response array into config. Extracted from Read so the request/response logic is unit-testable without a tfsdk.Config.
+func (d *GetShipModulesDataSource) readListRemote(ctx context.Context, config *GetShipModulesDataSourceModel, resp *datasource.ReadResponse) {
+	if d.client == nil {
+		resp.Diagnostics.AddError("Client Not Configured", "The API client was not set on the resource. The provider Configure method must run before resource operations; this is a bug in the generated provider.")
+		return
+	}
+	reqPath := "/my/ships/{shipSymbol}/modules"
+	reqPath = strings.ReplaceAll(reqPath, "{shipSymbol}", url.PathEscape(config.ShipSymbol.ValueString()))
+	params := url.Values{}
+	var nextURL string
+	fetch := func(ctx context.Context, p url.Values) (*http.Response, error) {
+		httpReq, err := d.client.NewRequest(ctx, http.MethodGet, reqPath, nil, client.WithSchemes("AgentToken"))
+		if err != nil {
+			return nil, err
+		}
+		if nextURL != "" {
+			parsed, perr := url.Parse(nextURL)
+			if perr != nil {
+				return nil, perr
+			}
+			httpReq.URL = parsed
+		} else {
+			httpReq.URL.RawQuery = p.Encode()
+		}
+		return d.client.Do(httpReq)
+	}
+	pages, err := client.ListAllPages(ctx, params, fetch, nil)
+	if err != nil {
+		resp.Diagnostics.AddError("Error reading spacetraders_get_ship_modules", fmt.Sprintf("Could not read list response: %s", err))
+		return
+	}
+	items := []any{}
+	for _, page := range pages {
+		pageObj := map[string]any{}
+		dec := json.NewDecoder(bytes.NewReader(page))
+		dec.UseNumber()
+		if err := dec.Decode(&pageObj); err != nil {
+			resp.Diagnostics.AddError("Error reading spacetraders_get_ship_modules", fmt.Sprintf("Could not decode list page: %s", err))
+			return
+		}
+		pageItems, ok := pageObj["data"].([]any)
+		if !ok {
+			resp.Diagnostics.AddError("Error reading spacetraders_get_ship_modules", fmt.Sprintf("Could not decode list page: missing %q array", "data"))
+			return
+		}
+		items = append(items, pageItems...)
+	}
+	if err := applyJSONToModel(&config, map[string]any{"items": items}); err != nil {
+		resp.Diagnostics.AddError("Error reading spacetraders_get_ship_modules", fmt.Sprintf("Could not map response to state: %s", err))
+		return
+	}
+}
+
+// Configure stores the API client supplied by the provider.
+func (d *GetShipModulesDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+	c, ok := req.ProviderData.(*client.Client)
+	if !ok {
+		resp.Diagnostics.AddError("Unexpected Data Source Configure Type", fmt.Sprintf("Expected *client.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData))
+		return
+	}
+	d.client = c
+}
